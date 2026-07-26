@@ -1,259 +1,126 @@
 package com.example.keylauncher;
 
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 
 /**
- * מנהל את פריסת מסך הבית.
+ * אחראי על המרת פריטי מסך הבית (LauncherItem) ל-JSON ובחזרה,
+ * ועל שמירתם וטעינתם דרך DesktopSettings.
  *
- * אחראי על:
- * - מיקום פריטים
- * - החלפת מיקומים
- * - מציאת תא פנוי
- * - שמירה וטעינה
+ * לתשומת לב: האייקון (Drawable) אינו נשמר - הוא נטען מחדש
+ * לפי packageName בכל פעם שהאפליקציה עולה.
  */
-public class DesktopLayoutManager {
+public class DesktopSerializer {
 
-    private final SettingsManager settings;
-    private final DesktopSerializer serializer;
+    private final DesktopSettings desktopSettings;
 
-    private final List<LauncherItem> items =
-            new ArrayList<>();
-
-    public DesktopLayoutManager(SettingsManager settings) {
-
-        this.settings = settings;
-
-        this.serializer =
-                new DesktopSerializer(
-                        settings.desktop);
-
+    public DesktopSerializer(DesktopSettings desktopSettings) {
+        this.desktopSettings = desktopSettings;
     }
 
-    public List<LauncherItem> getItems() {
-        return items;
-    }
+    public String serialize(List<LauncherItem> items) {
 
-    public void clear() {
-        items.clear();
-    }
+        JSONArray array = new JSONArray();
 
-    public void setItems(List<LauncherItem> list) {
+        if (items != null) {
 
-        items.clear();
+            try {
 
-        if (list != null) {
-            items.addAll(list);
-        }
+                for (LauncherItem item : items) {
 
-        sort();
+                    JSONObject obj = new JSONObject();
 
-    }
+                    obj.put("id", item.getId());
+                    obj.put("type", item.getType());
+                    obj.put("title", item.getTitle());
+                    obj.put("packageName", item.getPackageName());
+                    obj.put("className", item.getClassName());
+                    obj.put("appWidgetId", item.getAppWidgetId());
+                    obj.put("cellX", item.getCellX());
+                    obj.put("cellY", item.getCellY());
+                    obj.put("spanX", item.getSpanX());
+                    obj.put("spanY", item.getSpanY());
+                    obj.put("hidden", item.isHidden());
+                    obj.put("movable", item.isMovable());
+                    obj.put("customData", item.getCustomData());
 
-    public void addItem(LauncherItem item) {
-
-        if (item == null)
-            return;
-
-        items.add(item);
-
-        sort();
-
-    }
-
-    public void removeItem(LauncherItem item) {
-
-        items.remove(item);
-
-    }
-
-    public LauncherItem findById(long id) {
-
-        for (LauncherItem item : items) {
-
-            if (item.getId() == id)
-                return item;
-
-        }
-
-        return null;
-
-    }
-
-    public LauncherItem findItemAt(int cellX,
-                                   int cellY) {
-
-        for (LauncherItem item : items) {
-
-            if (item.getCellX() == cellX &&
-                    item.getCellY() == cellY) {
-
-                return item;
-
-            }
-
-        }
-
-        return null;
-
-    }
-
-    public boolean isCellOccupied(int cellX,
-                                  int cellY) {
-
-        return findItemAt(cellX, cellY) != null;
-
-    }
-
-    public boolean moveItem(LauncherItem item,
-                            int newCellX,
-                            int newCellY) {
-
-        if (item == null)
-            return false;
-
-        LauncherItem other =
-                findItemAt(newCellX,
-                        newCellY);
-
-        if (other == null) {
-
-            item.setCellX(newCellX);
-            item.setCellY(newCellY);
-
-            save();
-
-            return true;
-
-        }
-
-        int oldX = item.getCellX();
-        int oldY = item.getCellY();
-
-        other.setCellX(oldX);
-        other.setCellY(oldY);
-
-        item.setCellX(newCellX);
-        item.setCellY(newCellY);
-
-        save();
-
-        return true;
-
-    }
-
-    public int[] findFirstFreeCell(int columns) {
-
-        if (columns < 1)
-            columns = 4;
-
-        int row = 0;
-
-        while (true) {
-
-            for (int col = 0; col < columns; col++) {
-
-                if (!isCellOccupied(col, row)) {
-
-                    return new int[]{
-                            col,
-                            row
-                    };
+                    array.put(obj);
 
                 }
 
-            }
-
-            row++;
-
-        }
-
-    }
-
-    public void normalize(int columns) {
-
-        if (columns < 1)
-            columns = 4;
-
-        sort();
-
-        int x = 0;
-        int y = 0;
-
-        for (LauncherItem item : items) {
-
-            item.setCellX(x);
-            item.setCellY(y);
-
-            x++;
-
-            if (x >= columns) {
-
-                x = 0;
-                y++;
-
+            } catch (JSONException e) {
+                e.printStackTrace();
             }
 
         }
 
-        save();
+        return array.toString();
 
     }
 
-    public void sort() {
+    public List<LauncherItem> deserialize(String json) {
 
-        Collections.sort(items,
-                new Comparator<LauncherItem>() {
+        List<LauncherItem> result = new ArrayList<>();
 
-                    @Override
-                    public int compare(LauncherItem a,
-                                       LauncherItem b) {
+        if (json == null || json.trim().isEmpty()) {
+            return result;
+        }
 
-                        if (a.getCellY() != b.getCellY()) {
+        try {
 
-                            return a.getCellY()
-                                    - b.getCellY();
+            JSONArray array = new JSONArray(json);
 
-                        }
+            for (int i = 0; i < array.length(); i++) {
 
-                        return a.getCellX()
-                                - b.getCellX();
+                JSONObject obj = array.getJSONObject(i);
 
-                    }
+                LauncherItem item = new LauncherItem();
 
-                });
+                item.setId(obj.optLong("id", 0));
+                item.setType(obj.optInt("type", LauncherItem.TYPE_APP));
+                item.setTitle(obj.optString("title", ""));
+                item.setPackageName(obj.optString("packageName", ""));
+                item.setClassName(obj.optString("className", ""));
+                item.setAppWidgetId(obj.optInt("appWidgetId", -1));
+                item.setCellX(obj.optInt("cellX", 0));
+                item.setCellY(obj.optInt("cellY", 0));
+                item.setSpanX(obj.optInt("spanX", 1));
+                item.setSpanY(obj.optInt("spanY", 1));
+                item.setHidden(obj.optBoolean("hidden", false));
+                item.setMovable(obj.optBoolean("movable", true));
+                item.setCustomData(obj.optString("customData", ""));
 
-    }
+                result.add(item);
 
-    public void save() {
+            }
 
-        serializer.save(items);
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
 
-    }
-
-    public void load() {
-
-        items.clear();
-
-        items.addAll(serializer.load());
-
-        sort();
-
-    }
-
-    public void reset() {
-
-        items.clear();
-
-        serializer.clear();
+        return result;
 
     }
 
-    public int size() {
+    public void save(List<LauncherItem> items) {
 
-        return items.size();
+        desktopSettings.setLayout(serialize(items));
+
+    }
+
+    public List<LauncherItem> load() {
+
+        return deserialize(desktopSettings.getLayout());
+
+    }
+
+    public void clear() {
+
+        desktopSettings.setLayout("");
 
     }
 
